@@ -1,0 +1,143 @@
+name: CI/CD - Auth Service
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  release:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # PR FLOW
+
+  sast:
+    if: github.event_name == 'pull_request'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sast.yml@v1
+    with:
+      service-path: .
+      environment: development
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_URL: ${{ secrets.SONAR_URL }}
+
+  sca:
+    needs: [sast]
+    if: github.event_name == 'pull_request'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sca.yml@v1
+    with:
+      service-name: auth-service
+      service-path: .
+      runtime: python
+      environment: development
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  notify-snyk:
+    needs: [sca]
+    if: always() && needs.sca.outputs.critical-found == 'true'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_notify.yml@v1
+    with:
+      subject: "🚨 Snyk: Critical Vulnerabilities in auth-service"
+      body: "Critical/High vulnerabilities found in auth-service dependencies."
+      service-name: auth-service
+      artifact-name: snyk-report-auth-service
+      environment: development
+    secrets:
+      BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+      NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+
+  # ─── Temp Docker Build + Trivy Scan ───
+  build:
+    needs: [sast, sca]
+    if: github.event_name == 'pull_request'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_docker-build.yml@v1
+    with:
+      service-name: nutritrack-auth-service
+      service-path: .
+
+  # ─── Notify: Trivy Criticals ───
+  notify-trivy:
+    needs: [build]
+    if: always() && needs.build.outputs.trivy-critical == 'true'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_notify.yml@v1
+    with:
+      subject: "🚨 Trivy: Critical Vulnerabilities in auth-service"
+      body: "CRITICAL vulnerabilities found in auth-service Docker image."
+      service-name: auth-service
+      artifact-name: trivy-nutritrack-auth-service
+      environment: development
+    secrets:
+      BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+      NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+
+  # Single PR Check
+  pr-check:
+    name: PR Quality Gate
+    needs: [sast, sca, build]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All checks passed"
+
+
+  # DEVELOP (AFTER MERGE)
+  
+  dev-publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_docker-publish.yml@v1
+    with:
+      image-name: nutritrack-auth-service
+      tag: dev-${{ github.sha }}
+      environment: development
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  dev-cd:
+    needs: [dev-publish]
+    if: needs.dev-publish.result == 'success'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_cd-template.yml@v1
+    with:
+      service-name: authService
+      image-tag: dev-${{ github.sha }}
+      branch: develop
+      environment: development
+    secrets:
+      HELM_REPO_PAT: ${{ secrets.HELM_REPO_PAT }}
+
+  # RELEASE (MAIN ONLY)
+
+  publish:
+    if: >-
+      github.event_name == 'release' &&
+      github.event.release.target_commitish == 'main' &&
+      github.event.release.prerelease == false
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_docker-publish.yml@v1
+    with:
+      image-name: nutritrack-auth-service
+      tag: ${{ github.event.release.tag_name }}
+      environment: production
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  cd:
+    needs: [publish]
+    if: needs.publish.result == 'success'
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_cd-template.yml@v1
+    with:
+      service-name: authService
+      image-tag: ${{ github.event.release.tag_name }}
+      branch: main
+      environment: production
+    secrets:
+      HELM_REPO_PAT: ${{ secrets.HELM_REPO_PAT }}
