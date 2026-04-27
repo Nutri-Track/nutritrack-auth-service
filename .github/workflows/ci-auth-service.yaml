@@ -32,7 +32,7 @@ jobs:
   sca:
     needs: [sast]
     if: github.event_name == 'pull_request'
-    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sca.yml@v1.1
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sca.yml@v2
     with:
       service-name: auth-service
       service-path: .
