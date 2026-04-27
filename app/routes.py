@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +20,18 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
+# Rate limiter instance (shares backend with app-level limiter)
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post(
     "/register",
     response_model=AuthResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     body: UserRegisterRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -71,7 +78,9 @@ async def register(
 
 
 @router.post("/login", response_model=AuthResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     body: UserLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
