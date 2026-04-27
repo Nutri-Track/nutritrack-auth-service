@@ -33,7 +33,19 @@ Thumbs.db
 # Docker
 Dockerfile
 docker-compose*.yml
+.dockerignore
 
 # Docs
 README.md
 *.md
+
+# CI/CD & config
+.github/
+sonar-project.properties
+
+# Secrets & env files
+.env
+.env.*
+*.pem
+*.key
+*.crt

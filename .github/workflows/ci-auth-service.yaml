@@ -21,7 +21,7 @@ jobs:
 
   sast:
     if: github.event_name == 'pull_request'
-    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sast.yml@v1
+    uses: Nutri-Track/nutritrack-shared/.github/workflows/_sast.yml@v2
     with:
       service-path: .
       environment: development
