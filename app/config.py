@@ -24,6 +24,13 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
 
+    # Security
+    ALLOWED_HOSTS: list[str] = [
+        h.strip()
+        for h in os.getenv("ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    ]
+
 
 @lru_cache()
 def get_settings() -> Settings:
